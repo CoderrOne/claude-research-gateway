@@ -18,6 +18,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger("claude-research")
 
 
+def _publisher_cookies(cookies: list[dict], portal: "PortalConfig") -> list[dict]:
+    """
+    Keep only cookies for the portal's own domains (portal.cookie_domains).
+
+    The browser context also holds the university's SSO session, which
+    this tool never uses and should not keep on disk.
+    """
+    domains = [d.lstrip(".") for d in portal.cookie_domains]
+
+    def is_publisher(cookie: dict) -> bool:
+        host = cookie.get("domain", "").lstrip(".")
+        return any(host == d or host.endswith("." + d) for d in domains)
+
+    return [c for c in cookies if is_publisher(c)]
+
+
 class BrowserAuthenticator:
     """
     Handles interactive browser-based authentication to scientific journal portals.
@@ -63,7 +79,6 @@ class BrowserAuthenticator:
                 headless=headless,
                 args=[
                     "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
                 ],
             )
 
@@ -259,7 +274,7 @@ class BrowserAuthenticator:
 
                     # Convert to serializable format
                     cookie_list = []
-                    for cookie in cookies:
+                    for cookie in _publisher_cookies(cookies, portal):
                         cookie_list.append({
                             "name": cookie["name"],
                             "value": cookie["value"],
@@ -302,7 +317,7 @@ class BrowserAuthenticator:
                                     "sameSite": c.get("sameSite", "None"),
                                     "expires": c.get("expires", -1),
                                 }
-                                for c in cookies
+                                for c in _publisher_cookies(cookies, portal)
                             ]
                     except Exception:
                         continue
